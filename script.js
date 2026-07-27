@@ -93,4 +93,101 @@
       }
     });
   }
+
+  /* ---------------------------------------------------------------------
+   * Reduced motion: single source of truth for the two JS-driven effects
+   * below (CSS animations already fall back via the global
+   * prefers-reduced-motion rule in styles.css). Checked once at load —
+   * good enough to fully skip attaching any listeners/transforms.
+   * ------------------------------------------------------------------- */
+  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------------------------------------------------------------
+   * 3D tilt on service/price cards — perspective + rotateX/rotateY driven
+   * by pointer position, plus a metallic/lacquer sheen (radial highlight)
+   * and a directional shadow that both track the tilt direction.
+   * ------------------------------------------------------------------- */
+  if (!prefersReducedMotion) {
+    var tiltCards = document.querySelectorAll('.price-card');
+    var MAX_TILT_DEG = 7;
+
+    tiltCards.forEach(function (card) {
+      var rafId = null;
+
+      function applyTilt(clientX, clientY) {
+        var rect = card.getBoundingClientRect();
+        var px = (clientX - rect.left) / rect.width;   // 0..1 across card
+        var py = (clientY - rect.top) / rect.height;   // 0..1 down card
+        px = Math.min(Math.max(px, 0), 1);
+        py = Math.min(Math.max(py, 0), 1);
+
+        var rotateY = (px - 0.5) * (MAX_TILT_DEG * 2);   // left/right tilt
+        var rotateX = (0.5 - py) * (MAX_TILT_DEG * 2);   // up/down tilt
+
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(function () {
+          card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+          card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+          card.style.setProperty('--icon-angle', (135 + rotateY * 4).toFixed(1) + 'deg');
+          card.style.transform =
+            'perspective(1000px) rotateX(' + rotateX.toFixed(2) + 'deg) rotateY(' + rotateY.toFixed(2) + 'deg) translateZ(2px)';
+          card.style.boxShadow =
+            (-rotateY * 2.2).toFixed(1) + 'px ' + (rotateX * 2.2).toFixed(1) + 'px 34px -14px rgba(0,0,0,0.55), ' +
+            (rotateY * 1.6).toFixed(1) + 'px ' + (-rotateX * 1.6).toFixed(1) + 'px 28px -10px rgba(200,135,74,0.28)';
+        });
+      }
+
+      function resetTilt() {
+        if (rafId) cancelAnimationFrame(rafId);
+        card.classList.remove('is-tilting');
+        card.style.transform = '';
+        card.style.boxShadow = '';
+      }
+
+      card.addEventListener('pointerenter', function (event) {
+        if (event.pointerType === 'touch') return;
+        card.classList.add('is-tilting');
+      });
+      card.addEventListener('pointermove', function (event) {
+        if (event.pointerType === 'touch') return;
+        applyTilt(event.clientX, event.clientY);
+      });
+      card.addEventListener('pointerleave', function (event) {
+        if (event.pointerType === 'touch') return;
+        resetTilt();
+      });
+      card.addEventListener('blur', resetTilt);
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+   * Hero parallax — the decorative hero-texture layer drifts at a
+   * different speed than the page scroll (no background-attachment:fixed,
+   * just a translateY recalculated in a requestAnimationFrame loop).
+   * ------------------------------------------------------------------- */
+  if (!prefersReducedMotion) {
+    var heroTexture = document.querySelector('.hero-texture');
+
+    if (heroTexture) {
+      var PARALLAX_FACTOR = 0.12;
+      var PARALLAX_MAX = 60; // px — matches the -60px/-60px overscan in CSS
+      var parallaxTicking = false;
+
+      var updateParallax = function () {
+        var offset = Math.min(window.scrollY * PARALLAX_FACTOR, PARALLAX_MAX);
+        heroTexture.style.transform = 'translate3d(0,' + offset.toFixed(1) + 'px,0)';
+        parallaxTicking = false;
+      };
+
+      var onParallaxScroll = function () {
+        if (!parallaxTicking) {
+          parallaxTicking = true;
+          requestAnimationFrame(updateParallax);
+        }
+      };
+
+      window.addEventListener('scroll', onParallaxScroll, { passive: true });
+      updateParallax();
+    }
+  }
 })();
